@@ -53,9 +53,19 @@ client.on('message', async (msg) => {
         console.log('Pesan bukan untuk bot, abaikan.');
         return;
     }
+    let isImage = false;
+    let dataUrl = '';
+    if (msg.hasMedia) {
+        const media = await msg.downloadMedia();
+
+        if (media && media.mimetype.startsWith('image/')) {
+            isImage = true;
+            dataUrl = `data:${media.mimetype};base64,${media.data}`;
+        }
+    }
 
 
-    const reply = await getAIResponse(msg.from, msg.body, calltuan);
+    const reply = await getAIResponse(msg.from, msg.body, calltuan, isImage, dataUrl);
     msg.reply(reply);
 });
 const MAX_HISTORY = 10;
@@ -72,7 +82,7 @@ Status: jomblo
 Hobi: ngoding, netflix
 Pekerjaan: fulltime web developer di printsoft, freelance web developer
 Alamat: Surabaya
-nommor rekening : 2711505395(bca)
+nomor rekening : 2711505395(bca)
 Kepribadian: introvert, humoris, sabar
 instagram: @caturhendra_
 link portofolio: https://carroo.me
@@ -82,7 +92,7 @@ Aturan menjawab:
 1. Jika hanya basa basi, maka jawab dengan santai tanpa memberikan informasi pribadi apapun.
 2. Jawablah **hanya** jika pertanyaannya berkaitan dengan informasi pribadi yang ada di atas (seperti nama, umur, kampus, jurusan, kepribadian, minat, atau kontak).
 4. Gunakan gaya bahasa santai, kekinian, dan jangan terlalu panjang.
-5. Jangan sebut semua informasi sekaligus. Saat mengarahkan ke kontak, cukup pilih satu (boleh IG, WA, atau portofolio).
+5. Jangan sebut semua informasi sekaligus. jika bertanya tentang infomasi probadi dan tidak ada maka suruh untuk menghubungi ke kontak , cukup pilih satu (boleh IG, WA, atau portofolio).
 6. jika dia punya nama panggilan, panggil dia dengan nama itu.
 
 Contoh:
@@ -94,7 +104,7 @@ Contoh:
 
 
 
-async function getAIResponse(from, userMessage, calltuan = '') {
+async function getAIResponse(from, userMessage, calltuan = '', isImage = false, dataUrl = '') {
     try {
         const apiKey = process.env.OPEN_ROUTER_API_KEY;  // Ganti dengan API key mu
         const url = process.env.OPEN_ROUTER_API_URL; // Ganti dengan URL API mu
@@ -104,16 +114,32 @@ async function getAIResponse(from, userMessage, calltuan = '') {
             messages[from] = [
                 {
                     role: "system",
-                    content: infome
+                    content: [
+                        { type: "text", text: infome }
+                    ]
                 }
             ];
         }
 
         // Tambahkan pesan user ke history
-        messages[from].push({
-            role: "user",
-            content: userMessage + '\n' + calltuan
-        });
+
+        if (isImage) {
+            messages[from].push({
+                role: "user",
+                content: [
+                    { type: "text", text: userMessage },
+                    { type: "image_url", image_url: { url: dataUrl } }
+                ]
+            });
+        } else {
+            messages[from].push({
+                role: "user",
+                content: [
+                    { type: "text", text: userMessage + '\n' + calltuan }
+                ]
+            });
+        }
+
 
         // Kirim seluruh history chat ke API
         const data = {
@@ -137,8 +163,14 @@ async function getAIResponse(from, userMessage, calltuan = '') {
             content: aiReply
         });
         const systemPrompt = messages[from][0]; // simpan system prompt
-        const recentMessages = messages[from].slice(-MAX_HISTORY); // ambil 10 terakhir
-        messages[from] = [systemPrompt, ...recentMessages]; // gabungkan ulang
+        if (isImage) {
+            // Kalau ada gambar, reset history cuma simpan system prompt + assistant reply terakhir
+            messages[from] = [systemPrompt, messages[from][messages[from].length - 1]];
+        } else {
+            // Kalau bukan gambar, simpan normal tapi batasi maksimal history
+            const recentMessages = messages[from].slice(-MAX_HISTORY);
+            messages[from] = [systemPrompt, ...recentMessages];
+        }
 
         return aiReply;
 
